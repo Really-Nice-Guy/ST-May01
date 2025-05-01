@@ -33,8 +33,55 @@ export default function Page() {
   const [latestArticleId, setLatestArticleId] = useState<number | null>(null);
   const [visibleArticles, setVisibleArticles] = useState({ start: 1, end: 5 });
   const [email, setEmail] = useState('');
-  const [isEmailFormVisible, setIsEmailFormVisible] = useState(true);
+  const [isEmailFormVisible, setIsEmailFormVisible] = useState(false);
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [emailExists, setEmailExists] = useState<boolean | null>(null);
+  const [formattedArticle, setFormattedArticle] = useState('');
+  const [isFormatting, setIsFormatting] = useState(false);
+  const [showFormattedModal, setShowFormattedModal] = useState(false);
+
+  // Check localStorage on component mount - run this first and set high priority
+  useEffect(() => {
+    // If this is client-side, check if user is authenticated
+    if (typeof window !== 'undefined') {
+      console.log("Checking authentication status...");
+      try {
+        const isAuthenticated = localStorage.getItem('isAuthenticated');
+        console.log("Auth status from localStorage:", isAuthenticated);
+        
+        if (isAuthenticated === 'true') {
+          console.log("User is authenticated, hiding email form");
+          setIsEmailFormVisible(false);
+        } else {
+          console.log("User is not authenticated, showing email form");
+          setIsEmailFormVisible(true);
+        }
+      } catch (error) {
+        console.error("Error accessing localStorage:", error);
+        // Fall back to showing the form if there's an error
+        setIsEmailFormVisible(true);
+      }
+      
+      setIsAuthChecked(true);
+    }
+  }, []);
+
+  // Skip the email form if this is a direct navigation from an article page
+  useEffect(() => {
+    // Use the referrer to check if coming from an article page
+    if (typeof window !== 'undefined' && document.referrer) {
+      const referrer = document.referrer;
+      console.log("Page referrer:", referrer);
+      
+      // Check if referrer includes "/article/"
+      if (referrer.includes('/article/')) {
+        console.log("Coming from article page, skipping email form");
+        setIsEmailFormVisible(false);
+        // Also set authenticated to avoid future prompts
+        localStorage.setItem('isAuthenticated', 'true');
+      }
+    }
+  }, []);
 
   const fetchArticles = async (sortField = 'created_date', sortOrder = 'desc') => {
     console.log(`Fetching articles sorted by ${sortField} in ${sortOrder} order...`);
@@ -102,8 +149,8 @@ export default function Page() {
     return `https://ghsggshkbeszyvtufklf.supabase.co/storage/v1/object/public/${bucket}/${cleanPath}`;
   };
 
-  const handleShowMore = (pdfUrl: string) => {
-    window.open(pdfUrl, '_blank');
+  const handleOpenArticle = (articleId: number) => {
+    router.push(`/article/${articleId}`);
   };
 
   const handleScroll = (direction: string) => {
@@ -137,6 +184,14 @@ export default function Page() {
       console.log('Email exists, allowing access:', email);
       setIsEmailFormVisible(false);
       setEmailExists(true);
+      
+      // Store authentication status in localStorage
+      try {
+        localStorage.setItem('isAuthenticated', 'true');
+        console.log("Authentication status saved to localStorage");
+      } catch (error) {
+        console.error("Failed to save auth status to localStorage:", error);
+      }
       return;
     }
 
@@ -155,150 +210,226 @@ Thank you!`);
     window.location.href = `mailto:hshah@yahoo.com?subject=${subject}&body=${body}`;
   };
 
+  // Function to format and stream article
+  const handleFormatArticle = async (writeup: string) => {
+    setFormattedArticle('');
+    setIsFormatting(true);
+    setShowFormattedModal(true);
+    const res = await fetch('/api/format-article', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: writeup }),
+    });
+    if (!res.ok) {
+      console.error('Formatting failed');
+      setIsFormatting(false);
+      return;
+    }
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let done = false;
+    while (!done) {
+      const { value, done: doneReading } = await reader.read();
+      done = doneReading;
+      const chunk = decoder.decode(value);
+      chunk.split('\n').forEach(line => {
+        if (line.startsWith('data: ')) {
+          const data = line.replace('data: ', '').trim();
+          if (data === '[DONE]') {
+            done = true;
+          } else {
+            try {
+              const parsed = JSON.parse(data);
+              const textPart = parsed.choices[0].delta.content;
+              if (textPart) setFormattedArticle(prev => prev + textPart);
+            } catch {}
+          }
+        }
+      });
+    }
+    setIsFormatting(false);
+  };
+
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl">Sunday Thoughts</h1>
-        <p className="mt-2 text-lg text-gray-600">A Collection of Insights and Reflections</p>
-      </div>
-
-      {/* Search and Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-8">
-        <Input type="search" placeholder="Search titles..." className="flex-1" />
-        <Select onValueChange={setSelectedCategory}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All Categories" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            <SelectItem value="geopolitics">Geopolitics</SelectItem>
-            <SelectItem value="tech">New Age Technology</SelectItem>
-            <SelectItem value="leadership">Thought Leadership</SelectItem>
-            <SelectItem value="ai">AI/Data Cloud</SelectItem>
-            <SelectItem value="macro">Macroeconomy</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select onValueChange={(value) => handleSortChange(value, sortOption.order)}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Sort By" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="title">Title</SelectItem>
-            <SelectItem value="category">Category</SelectItem>
-            <SelectItem value="created_date">Date</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select onValueChange={(value) => handleSortChange(sortOption.field, value)}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Order" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="asc">Ascending</SelectItem>
-            <SelectItem value="desc">Descending</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex gap-8">
-        {/* Left Section */}
-        <div className="flex-1">
-          {filteredArticles.slice(0, 1).map((article) => {
-            const imageUrl = getPublicUrl('images', article.image);
-            const pdfUrl = getPublicUrl('articlepdffile', article.articlepdffile);
-            const writeupExcerpt = getFirst100Words(article.writeup);
-
-            return (
-              <div key={article.id} className="mb-8 relative">
-                <Image
-                  src={imageUrl || "/placeholder.svg"}
-                  alt=""
-                  width={200}
-                  height={200}
-                  className="rounded-lg object-cover mb-4"
-                />
-                <h2 className="text-xl font-bold">{article.title}</h2>
-                <p className="text-sm text-gray-600">{article.category}</p>
-                <p className="text-sm text-gray-600">{formatDate(article.created_date)}</p>
-                <p className="mt-2 text-gray-800">{writeupExcerpt}</p>
-                <Button variant="default" onClick={() => handleShowMore(pdfUrl)} className="mt-4">
-                  Show More
-                </Button>
-                {isNew(article.id) && (
-                  <button onClick={() => handleShowMore(pdfUrl)} className="absolute top-0 right-0 text-4xl font-bold text-green-700">
-                    New (#{article.id})
-                  </button>
-                )}
-              </div>
-            );
-          })}
+    <div className="relative">
+      {/* Formatted Article Modal */}
+      {showFormattedModal && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-30 flex items-start justify-center p-8" style={{ backdropFilter: 'blur(10px)' }}>
+          <div className="bg-white w-full max-w-3xl h-[80vh] overflow-auto rounded-lg shadow-lg p-6 relative">
+            <button onClick={() => setShowFormattedModal(false)} className="absolute top-4 right-4 text-gray-600 hover:text-gray-800">Close</button>
+            {isFormatting ? (
+              <p className="text-gray-500">Formatting article...</p>
+            ) : (
+              formattedArticle.split("\n\n").map((para, idx) => {
+                // Check if paragraph contains code block with backticks
+                if (para.includes("``")) {
+                  // Split by backticks
+                  const parts = para.split("``");
+                  return (
+                    <div key={idx} className="mb-4">
+                      {parts.map((part, partIdx) => {
+                        // Even indices are regular text, odd indices are code
+                        return partIdx % 2 === 0 ? (
+                          <span key={partIdx}>{part}</span>
+                        ) : (
+                          <code key={partIdx} className="bg-gray-100 font-mono p-1 rounded text-sm block my-2 whitespace-pre-wrap">{part}</code>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+                // Regular paragraph without code
+                return <p key={idx} className="mb-4">{para}</p>;
+              })
+            )}
+          </div>
+        </div>
+      )}
+      <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl">Sunday Thoughts</h1>
+          <p className="mt-2 text-lg text-gray-600">A Collection of Insights and Reflections</p>
         </div>
 
-        {/* Right Section */}
-        <div className="w-1/3 border p-4 rounded-lg relative">
-          <div className="grid grid-cols-2 gap-4 pr-8">
-            {filteredArticles.slice(visibleArticles.start, visibleArticles.end).map((article) => {
+        {/* Search and Filters */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-8">
+          <Input type="search" placeholder="Search titles..." className="flex-1" />
+          <Select onValueChange={setSelectedCategory}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="All Categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              <SelectItem value="geopolitics">Geopolitics</SelectItem>
+              <SelectItem value="tech">New Age Technology</SelectItem>
+              <SelectItem value="leadership">Thought Leadership</SelectItem>
+              <SelectItem value="ai">AI/Data Cloud</SelectItem>
+              <SelectItem value="macro">Macroeconomy</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select onValueChange={(value) => handleSortChange(value, sortOption.order)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Sort By" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="title">Title</SelectItem>
+              <SelectItem value="category">Category</SelectItem>
+              <SelectItem value="created_date">Date</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select onValueChange={(value) => handleSortChange(sortOption.field, value)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Order" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="asc">Ascending</SelectItem>
+              <SelectItem value="desc">Descending</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Main Content */}
+        <div className="flex gap-8">
+          {/* Left Section */}
+          <div className="flex-1">
+            {filteredArticles.slice(0, 1).map((article) => {
               const imageUrl = getPublicUrl('images', article.image);
               const pdfUrl = getPublicUrl('articlepdffile', article.articlepdffile);
+              const writeup = article.writeup;
 
               return (
-                <div key={article.id} className="mb-4 flex flex-col justify-between h-full">
-                  <div>
-                    <Image
-                      src={imageUrl || "/placeholder.svg"}
-                      alt=""
-                      width={100}
-                      height={100}
-                      className="rounded-lg object-cover mb-2"
-                    />
-                    <h3 className="text-lg font-medium">{article.title}</h3>
-                    <p className="text-sm text-gray-600">{article.category}</p>
-                    <p className="text-sm text-gray-600">{formatDate(article.created_date)}</p>
-                  </div>
-                  <Button variant="default" onClick={() => window.open(pdfUrl, '_blank')} className="mt-2">
-                    View
+                <div key={article.id} className="mb-8 relative">
+                  <Image
+                    src={imageUrl || "/placeholder.svg"}
+                    alt=""
+                    width={200}
+                    height={200}
+                    className="rounded-lg object-cover mb-4"
+                  />
+                  <h2 className="text-xl font-bold">{article.title}</h2>
+                  <p className="text-sm text-gray-600">{article.category}</p>
+                  <p className="text-sm text-gray-600">{formatDate(article.created_date)}</p>
+                  <p className="mt-2 text-gray-800">{writeup.split('\n')[0]}</p>
+                  <Button variant="default" onClick={() => handleOpenArticle(article.id)} className="mt-4">
+                    Read This Article
                   </Button>
+                  {isNew(article.id) && (
+                    <button onClick={() => handleOpenArticle(article.id)} className="absolute top-0 right-0 text-4xl font-bold text-green-700">
+                      New (#{article.id})
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
-          <div className="absolute top-0 right-0 flex flex-col h-full justify-between border-l border-gray-300">
-            <button onClick={() => handleScroll('up')} className="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded flex items-center justify-center m-1">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-              </svg>
-            </button>
-            <button onClick={() => handleScroll('down')} className="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded flex items-center justify-center m-1">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+
+          {/* Right Section */}
+          <div className="w-1/3 border p-4 rounded-lg relative">
+            <div className="grid grid-cols-2 gap-4 pr-8">
+              {filteredArticles.slice(visibleArticles.start, visibleArticles.end).map((article) => {
+                const imageUrl = getPublicUrl('images', article.image);
+                const pdfUrl = getPublicUrl('articlepdffile', article.articlepdffile);
+                const writeup = article.writeup;
+
+                return (
+                  <div key={article.id} className="mb-4 flex flex-col justify-between h-full">
+                    <div>
+                      <Image
+                        src={imageUrl || "/placeholder.svg"}
+                        alt=""
+                        width={100}
+                        height={100}
+                        className="rounded-lg object-cover mb-2"
+                      />
+                      <h3 className="text-lg font-medium">{article.title}</h3>
+                      <p className="text-sm text-gray-600">{article.category}</p>
+                      <p className="text-sm text-gray-600">{formatDate(article.created_date)}</p>
+                    </div>
+                    <Button variant="default" onClick={() => handleOpenArticle(article.id)} className="mt-2">
+                      Read
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="absolute top-0 right-0 flex flex-col h-full justify-between border-l border-gray-300">
+              <button onClick={() => handleScroll('up')} className="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded flex items-center justify-center m-1">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </button>
+              <button onClick={() => handleScroll('down')} className="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded flex items-center justify-center m-1">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Email Collection Form */}
-      {isEmailFormVisible && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50" style={{ backdropFilter: 'blur(10px)', backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
-          <form onSubmit={handleEmailSubmit} className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-            <h2 className="text-3xl font-bold mb-6 text-center">Join Our Community</h2>
-            <p className="text-center text-gray-700 mb-4">Enter your email to access exclusive content.</p>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
-              className="border p-3 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-            <button type="submit" className="bg-blue-600 text-white p-3 rounded w-full mb-4 hover:bg-blue-700">Retry with a Different Email</button>
-            {emailExists === false && (
-              <button type="button" onClick={handleRequestAccess} className="bg-green-500 text-white p-3 rounded w-full hover:bg-green-600">Request Access</button>
-            )}
-          </form>
-        </div>
-      )}
+        {/* Email Collection Form - Only show after auth check is complete */}
+        {isAuthChecked && isEmailFormVisible && (
+          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50" style={{ backdropFilter: 'blur(10px)', backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
+            <form onSubmit={handleEmailSubmit} className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+              <h2 className="text-3xl font-bold mb-6 text-center">Join Our Community</h2>
+              <p className="text-center text-gray-700 mb-4">Enter your email to access exclusive content.</p>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email"
+                className="border p-3 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+              <button type="submit" className="bg-blue-600 text-white p-3 rounded w-full mb-4 hover:bg-blue-700">Retry with a Different Email</button>
+              {emailExists === false && (
+                <button type="button" onClick={handleRequestAccess} className="bg-green-500 text-white p-3 rounded w-full hover:bg-green-600">Request Access</button>
+              )}
+            </form>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
