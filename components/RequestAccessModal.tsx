@@ -13,7 +13,15 @@ export default function RequestAccessModal({ isOpen, onClose }: RequestAccessMod
 
   const handleRequest = async () => {
     setSubmitted(true);
-    console.log("Request Access Submitted:", email);
+    try {
+      await fetch('/api/request-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+    } catch (error) {
+      console.error('Failed to record access request:', error);
+    }
   };
 
   return (

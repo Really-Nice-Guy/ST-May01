@@ -54,7 +54,7 @@ export default function LoginModal({ isOpen, onClose, onRequestAccess }: LoginMo
       <Dialog.Portal>
         <Dialog.Overlay className="bg-black/30 fixed inset-0" />
         <Dialog.Content className="bg-white p-6 rounded-md shadow-md fixed top-10 left-1/2 transform -translate-x-1/2 w-80">
-          <Dialog.Title className="text-lg font-semibold mb-4 text-center">Login</Dialog.Title>
+          <Dialog.Title className="text-lg font-semibold mb-4 text-center">Enter Email Address</Dialog.Title>
           <div>
             <input
               type="email"

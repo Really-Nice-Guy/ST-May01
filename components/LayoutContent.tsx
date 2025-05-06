@@ -101,8 +101,25 @@ export default function LayoutContent({
       {isAuthenticated ? (
         <main className="p-4">{children}</main>
       ) : (
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <p className="text-xl text-gray-600">Please log in to access the portal</p>
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] space-y-6">
+          <div className="flex flex-row items-center w-full max-w-6xl justify-center space-x-8">
+            <div className="flex flex-col items-center space-y-4">
+              <img
+                src="/sundaythoughts_logo.png"
+                alt="Sunday Thoughts Logo"
+                className="w-48 h-auto"
+                style={{ minWidth: '150px' }}
+              />
+              <AuthContainer />
+            </div>
+            <img
+              src="/sundaythoughts_illustration.png"
+              alt="Sunday Thoughts Illustration"
+              className="h-64 w-[600px] object-contain"
+              style={{ minWidth: '400px' }}
+            />
+          </div>
+          <p className="text-xl text-gray-600 mt-8">Please log in to access the portal</p>
         </div>
       )}
     </div>
